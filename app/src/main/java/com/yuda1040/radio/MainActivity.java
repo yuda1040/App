@@ -72,6 +72,8 @@ public class MainActivity extends Activity {
         bands.setGravity(Gravity.CENTER);
         Button fmBtn = button("FM");
         Button amBtn = button("AM");
+        amBtn.setEnabled(false);
+        amBtn.setAlpha(0.45f);
         bands.addView(fmBtn, weight());
         bands.addView(amBtn, weight());
         root.addView(bands, new LinearLayout.LayoutParams(-1, 65));
@@ -81,8 +83,7 @@ public class MainActivity extends Activity {
             radio.setBand(true);
         });
         amBtn.setOnClickListener(v -> {
-            fm = false;
-            radio.setBand(false);
+            status.setText("Jelly 2E תומך FM; לא זוהה מצב AM");
         });
 
         LinearLayout controls = new LinearLayout(this);
@@ -100,7 +101,7 @@ public class MainActivity extends Activity {
         auto.setOnClickListener(v -> radio.findAlternative());
 
         TextView note = tv(
-                "רדיו מקומי בלבד • ללא אינטרנט\nהפעולה תלויה בתמיכת FM/AM של המכשיר",
+                "רדיו מקומי בלבד • ללא אינטרנט\nJelly 2E כולל FM • יש לחבר אוזניות כאנטנה",
                 13, false);
         note.setTextColor(Color.DKGRAY);
         root.addView(note, new LinearLayout.LayoutParams(-1, 65));
