@@ -1,6 +1,5 @@
 package com.yuda1040.radio;
 
-import android.Manifest;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.os.Build;
@@ -11,6 +10,9 @@ import java.lang.reflect.*;
 import com.android.dx.stock.ProxyBuilder;
 
 public final class RadioEngine {
+    private static final String ACCESS_BROADCAST_RADIO =
+            "android.permission.ACCESS_BROADCAST_RADIO";
+
     public interface Listener {
         void onFrequency(double f, boolean fm, boolean signal);
         void onMessage(String s);
@@ -41,10 +43,7 @@ public final class RadioEngine {
             return;
         }
 
-        // ACCESS_BROADCAST_RADIO is a privileged/system permission on normal
-        // Android builds. Checking it before reflection avoids a misleading
-        // generic failure and makes the limitation explicit.
-        if (context.checkSelfPermission(Manifest.permission.ACCESS_BROADCAST_RADIO)
+        if (context.checkSelfPermission(ACCESS_BROADCAST_RADIO)
                 != PackageManager.PERMISSION_GRANTED) {
             listener.onMessage("Android חסם גישה למקלט החומרתי • נדרשת הרשאת מערכת");
             return;
