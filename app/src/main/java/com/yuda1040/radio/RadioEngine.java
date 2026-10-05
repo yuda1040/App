@@ -1,12 +1,9 @@
 package com.yuda1040.radio;
 
 import android.content.Context;
-import android.hardware.radio.ProgramSelector;
-import android.hardware.radio.RadioManager;
-import android.hardware.radio.RadioTuner;
 import android.os.Handler;
 import android.os.Looper;
-import java.lang.reflect.Method;
+import java.lang.reflect.*;
 
 public final class RadioEngine {
     public interface Listener {
@@ -16,53 +13,39 @@ public final class RadioEngine {
 
     private final Context context;
     private final Listener listener;
-    private RadioTuner tuner;
+    private Object tuner;
     private boolean fm = true;
     private double current = 99.5;
 
     public RadioEngine(Context c, Listener l) { context=c.getApplicationContext(); listener=l; }
 
+    private Class<?> cls(String n) throws Exception { return Class.forName(n); }
+
     public void open() {
         if (android.os.Build.VERSION.SDK_INT < 29) {
-            listener.onMessage("המקלט המקומי דורש Android 10 ומעלה");
-            return;
+            listener.onMessage("המקלט המקומי דורש Android 10 ומעלה"); return;
         }
         try {
-            RadioManager rm = (RadioManager) context.getSystemService(Context.RADIO_SERVICE);
+            Class<?> rmClass = cls("android.hardware.radio.RadioManager");
+            Object rm = context.getSystemService("broadcastradio");
             if (rm == null) { listener.onMessage("המכשיר אינו חושף מקלט FM/AM למערכת"); return; }
 
-            RadioManager.ModuleProperties[] modules = rm.listModules();
-            if (modules == null || modules.length == 0) {
-                listener.onMessage("לא נמצא מקלט FM/AM חומרתי במכשיר");
-                return;
+            Method listModules = rmClass.getMethod("listModules");
+            Object modules = listModules.invoke(rm);
+            if (modules == null || Array.getLength(modules) == 0) {
+                listener.onMessage("לא נמצא מקלט FM/AM חומרתי במכשיר"); return;
             }
-            RadioManager.BandConfig cfg = null;
-            try {
-                Method m = modules[0].getClass().getMethod("getBands");
-                Object bands = m.invoke(modules[0]);
-            } catch (Throwable ignored) {}
 
-            RadioTuner.Callback cb = new RadioTuner.Callback() {
-                @Override public void onProgramInfoChanged(RadioManager.ProgramInfo info) {
-                    try {
-                        ProgramSelector s = info.getSelector();
-                        long khz = s.getFirstId(ProgramSelector.IDENTIFIER_TYPE_AMFM_FREQUENCY);
-                        boolean isFm = khz >= 60000;
-                        current = isFm ? khz/1000.0 : khz;
-                        fm = isFm;
-                        boolean signal = info.getSignalStrength() > 0;
-                        listener.onFrequency(current, fm, signal);
-                    } catch (Throwable ignored) {}
-                }
-                @Override public void onAntennaState(boolean connected) {
-                    listener.onMessage(connected ? "מחובר לאנטנה" : "האנטנה מנותקת");
-                }
-                @Override public void onError(int e) { listener.onMessage("שגיאת מקלט: " + e); }
-            };
-
-            tuner = rm.openTuner(0, cfg, true, cb, new Handler(Looper.getMainLooper()));
+            Method open = rmClass.getMethod("openTuner", int.class,
+                    cls("android.hardware.radio.RadioManager$BandConfig"),
+                    boolean.class, cls("android.hardware.radio.RadioTuner$Callback"),
+                    Handler.class);
+            tuner = open.invoke(rm, 0, null, true, null, new Handler(Looper.getMainLooper()));
             if (tuner == null) listener.onMessage("לא ניתן לפתוח את מקלט הרדיו");
-            else listener.onMessage("מקלט חומרתי מוכן");
+            else {
+                listener.onMessage("מקלט חומרתי מוכן");
+                tune();
+            }
         } catch (SecurityException e) {
             listener.onMessage("גישה למקלט הרדיו חסומה במכשיר הזה");
         } catch (Throwable e) {
@@ -71,35 +54,74 @@ public final class RadioEngine {
     }
 
     public void setBand(boolean isFm) {
-        fm=isFm;
-        current=isFm ? 99.5 : 1000;
-        tune();
+        fm=isFm; current=isFm ? 99.5 : 1000; tune();
     }
 
     public void step(boolean up) {
         if (tuner == null) { listener.onMessage("אין מקלט חומרתי זמין"); return; }
-        try { tuner.step(up ? RadioTuner.DIRECTION_UP : RadioTuner.DIRECTION_DOWN, true); }
-        catch (Throwable e) { listener.onMessage("לא ניתן לשנות תדר"); }
+        try {
+            Class<?> rt = cls("android.hardware.radio.RadioTuner");
+            Method m = rt.getMethod("step", int.class, boolean.class);
+            int dir = rt.getField(up ? "DIRECTION_UP" : "DIRECTION_DOWN").getInt(null);
+            m.invoke(tuner, dir, true);
+            readInfo();
+        } catch (Throwable e) { listener.onMessage("לא ניתן לשנות תדר"); }
     }
 
     public void findAlternative() {
-        if (tuner == null) { listener.onMessage("חיפוש תדר מקביל זמין רק כאשר מקלט FM/AM חומרתי פעיל"); return; }
+        if (tuner == null) {
+            listener.onMessage("חיפוש תדר מקביל זמין רק כאשר מקלט FM/AM חומרתי פעיל"); return;
+        }
         listener.onMessage("מחפש תדר חלופי עם קליטה טובה…");
         try {
-            tuner.scan(RadioTuner.DIRECTION_UP, true);
+            Class<?> rt = cls("android.hardware.radio.RadioTuner");
+            int dir = rt.getField("DIRECTION_UP").getInt(null);
+            rt.getMethod("scan", int.class, boolean.class).invoke(tuner, dir, true);
+            new Handler(Looper.getMainLooper()).postDelayed(this::readInfo, 900);
         } catch (Throwable e) {
-            try { tuner.step(RadioTuner.DIRECTION_UP, true); }
-            catch (Throwable ignored) { listener.onMessage("המקלט לא תומך בחיפוש אוטומטי"); }
+            step(true);
         }
     }
 
     private void tune() {
         if (tuner == null) return;
         try {
+            Class<?> ps = cls("android.hardware.radio.ProgramSelector");
+            Class<?> rm = cls("android.hardware.radio.RadioManager");
             int khz = fm ? (int)Math.round(current*1000) : (int)Math.round(current);
-            tuner.tune(ProgramSelector.createAmFmSelector(RadioManager.BAND_INVALID, khz));
+            int invalid = rm.getField("BAND_INVALID").getInt(null);
+            Object selector = ps.getMethod("createAmFmSelector", int.class, int.class)
+                    .invoke(null, invalid, khz);
+            tuner.getClass().getMethod("tune", ps).invoke(tuner, selector);
+            new Handler(Looper.getMainLooper()).postDelayed(this::readInfo, 700);
         } catch (Throwable e) { listener.onMessage("תדר לא זמין"); }
     }
 
-    public void close() { if (tuner != null) { try { tuner.close(); } catch(Throwable ignored) {} tuner=null; } }
+    private void readInfo() {
+        if (tuner == null) return;
+        try {
+            Class<?> rt = cls("android.hardware.radio.RadioTuner");
+            Class<?> pi = cls("android.hardware.radio.RadioManager$ProgramInfo");
+            Object arr = Array.newInstance(pi, 1);
+            Method m = rt.getMethod("getProgramInformation", arr.getClass());
+            int result = (Integer)m.invoke(tuner, arr);
+            Object info = Array.get(arr, 0);
+            if (result == 0 && info != null) {
+                Object selector = info.getClass().getMethod("getSelector").invoke(info);
+                Class<?> ps = cls("android.hardware.radio.ProgramSelector");
+                int type = ps.getField("IDENTIFIER_TYPE_AMFM_FREQUENCY").getInt(null);
+                long khz = ((Number)ps.getMethod("getFirstId", int.class).invoke(selector, type)).longValue();
+                fm = khz >= 60000; current = fm ? khz/1000.0 : khz;
+                int strength = ((Number)info.getClass().getMethod("getSignalStrength").invoke(info)).intValue();
+                listener.onFrequency(current, fm, strength > 0);
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    public void close() {
+        if (tuner != null) {
+            try { tuner.getClass().getMethod("close").invoke(tuner); } catch(Throwable ignored) {}
+            tuner=null;
+        }
+    }
 }
