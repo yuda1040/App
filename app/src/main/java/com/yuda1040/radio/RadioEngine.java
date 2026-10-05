@@ -1,9 +1,9 @@
 package com.yuda1040.radio;
 
 import android.content.Context;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
-import java.io.File;
 import java.lang.reflect.*;
 import com.android.dx.stock.ProxyBuilder;
 
@@ -79,12 +79,10 @@ public final class RadioEngine {
                     handler.postDelayed(this::tune, 150);
                 } else if ("onProgramInfoChanged".equals(n)) {
                     handler.post(this::readInfo);
-                } else if ("onAntennaState".equals(n)) {
-                    if (args != null && args.length > 0 && args[0] instanceof Boolean) {
-                        boolean connected = (Boolean) args[0];
-                        handler.post(() -> listener.onMessage(
-                                connected ? "אנטנה פעילה • מוכן לקליטה" : "אנטנה לא מזוהה"));
-                    }
+                } else if ("onAntennaState".equals(n) && args != null && args.length > 0 && args[0] instanceof Boolean) {
+                    boolean connected = (Boolean) args[0];
+                    handler.post(() -> listener.onMessage(
+                            connected ? "אנטנה פעילה • מוכן לקליטה" : "אנטנה לא מזוהה"));
                 } else if ("onControlChanged".equals(n)) {
                     handler.post(() -> listener.onMessage("חיבור הרדיו השתנה"));
                 }
