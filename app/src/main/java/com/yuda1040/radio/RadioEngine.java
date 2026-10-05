@@ -43,9 +43,16 @@ public final class RadioEngine {
             return;
         }
 
+        // Jelly 2E is MediaTek. The generic Broadcast Radio API is privileged,
+        // so first try the FM application supplied by the device firmware.
+        if (isMediaTek() && launchVendorFmApp()) {
+            listener.onMessage("נפתח יישום ה-FM של המכשיר • חבר אוזניות לאנטנה");
+            return;
+        }
+
         if (context.checkSelfPermission(ACCESS_BROADCAST_RADIO)
                 != PackageManager.PERMISSION_GRANTED) {
-            listener.onMessage("Android חסם גישה למקלט החומרתי • נדרשת הרשאת מערכת");
+            listener.onMessage("הטלפון כולל FM, אבל Android לא מאפשר לאפליקציה רגילה לשלוט ישירות במקלט");
             return;
         }
 
@@ -145,6 +152,33 @@ public final class RadioEngine {
         } catch (Throwable e) {
             fail("המקלט קיים אך ממשק היצרן אינו תואם");
         }
+    }
+
+
+    private boolean isMediaTek() {
+        return Build.MANUFACTURER != null
+                && Build.MANUFACTURER.toLowerCase(java.util.Locale.US).contains("mediatek");
+    }
+
+    private boolean launchVendorFmApp() {
+        String[][] candidates = new String[][] {
+                {"com.mediatek.fmradio", "com.mediatek.fmradio.FmRadioActivity"},
+                {"com.mediatek.FMRadio", "com.mediatek.FMRadio.FMRadioActivity"},
+                {"com.android.fmradio", "com.android.fmradio.FMRadio"},
+                {"com.caf.fmradio", "com.caf.fmradio.FMRadio"}
+        };
+        for (String[] candidate : candidates) {
+            try {
+                android.content.Intent intent = new android.content.Intent();
+                intent.setClassName(candidate[0], candidate[1]);
+                intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                if (context.getPackageManager().resolveActivity(intent, 0) != null) {
+                    context.startActivity(intent);
+                    return true;
+                }
+            } catch (Throwable ignored) {}
+        }
+        return false;
     }
 
     private void fail(String message) {
